@@ -48,6 +48,7 @@ What am I currently tracking?
 How much time did I spend on the website project this month?
 Start a timer for "PR review" on the Platform project
 I started working on this at 3pm — start a timer backdated to then
+Log that I worked on the API project from 1pm to 3pm yesterday
 Fix that last entry's start time to 9:30am
 Show me yesterday's hours as a chart
 What apps did I use most today?

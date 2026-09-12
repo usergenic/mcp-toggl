@@ -112,6 +112,51 @@ export function parseIsoDateTime(value: string): string {
   return date.toISOString();
 }
 
+export interface CreatedEntryTiming {
+  start: string;
+  stop?: string;
+  duration: number;
+}
+
+// Resolve the start/stop/duration for a completed past time entry from raw tool
+// args. A completed entry needs an end, so start_time must be accompanied by
+// either stop_time or a positive duration (seconds); when stop_time is given,
+// duration is derived from it. Toggl requires `duration` on created entries, so
+// it is always returned.
+export function resolveCreatedEntryTiming(
+  startTime: unknown,
+  stopTime: unknown,
+  duration: unknown
+): CreatedEntryTiming {
+  if (typeof startTime !== 'string') {
+    throw new Error('start_time is required (ISO 8601).');
+  }
+  const start = parseIsoDateTime(startTime);
+
+  if (stopTime !== undefined) {
+    if (typeof stopTime !== 'string') {
+      throw new Error('stop_time must be an ISO 8601 string.');
+    }
+    const stop = parseIsoDateTime(stopTime);
+    const seconds = Math.round((new Date(stop).getTime() - new Date(start).getTime()) / 1000);
+    if (seconds <= 0) {
+      throw new Error('stop_time must be after start_time.');
+    }
+    return { start, stop, duration: seconds };
+  }
+
+  if (duration !== undefined) {
+    if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
+      throw new Error('duration must be a positive number of seconds.');
+    }
+    return { start, duration: Math.round(duration) };
+  }
+
+  throw new Error(
+    'A completed entry needs an end: provide stop_time or a positive duration (seconds). To start a running timer, use toggl_start_timer.'
+  );
+}
+
 export function isDatePeriod(value: unknown): value is DatePeriod {
   return (
     value === 'today' ||

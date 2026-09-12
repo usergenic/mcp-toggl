@@ -8,6 +8,7 @@ import {
   isDatePeriod,
   localDateRangeFromArgs,
   parseIsoDateTime,
+  resolveCreatedEntryTiming,
   parseLocalYMD,
   secondsToHours,
   toLocalYMD,
@@ -47,6 +48,43 @@ describe('parseIsoDateTime', () => {
     expect(() => parseIsoDateTime('2026-09-12')).toThrow(/Invalid datetime format/);
     expect(() => parseIsoDateTime('2026-02-30T10:00:00')).toThrow(/Invalid calendar date/);
     expect(() => parseIsoDateTime('2026-09-12T25:00:00')).toThrow(/Invalid datetime/);
+  });
+});
+
+describe('resolveCreatedEntryTiming', () => {
+  it('derives duration from start_time and stop_time', () => {
+    expect(
+      resolveCreatedEntryTiming('2026-09-12T13:00:00Z', '2026-09-12T15:00:00Z', undefined)
+    ).toEqual({
+      start: '2026-09-12T13:00:00.000Z',
+      stop: '2026-09-12T15:00:00.000Z',
+      duration: 7200,
+    });
+  });
+
+  it('accepts an explicit positive duration without a stop time', () => {
+    expect(resolveCreatedEntryTiming('2026-09-12T13:00:00Z', undefined, 5400)).toEqual({
+      start: '2026-09-12T13:00:00.000Z',
+      duration: 5400,
+    });
+  });
+
+  it('requires start_time and an end', () => {
+    expect(() => resolveCreatedEntryTiming(undefined, '2026-09-12T15:00:00Z', undefined)).toThrow(
+      /start_time is required/
+    );
+    expect(() => resolveCreatedEntryTiming('2026-09-12T13:00:00Z', undefined, undefined)).toThrow(
+      /needs an end/
+    );
+  });
+
+  it('rejects a stop before start or a non-positive duration', () => {
+    expect(() =>
+      resolveCreatedEntryTiming('2026-09-12T15:00:00Z', '2026-09-12T13:00:00Z', undefined)
+    ).toThrow(/stop_time must be after start_time/);
+    expect(() => resolveCreatedEntryTiming('2026-09-12T13:00:00Z', undefined, 0)).toThrow(
+      /positive number of seconds/
+    );
   });
 });
 

@@ -24,6 +24,7 @@ import {
   toLocalYMD,
   parseLocalYMD,
   parseIsoDateTime,
+  resolveCreatedEntryTiming,
   localDateRangeFromArgs,
 } from './utils.js';
 import type {
@@ -311,6 +312,63 @@ const tools: Tool[] = [
             'Optional ISO 8601 start time to backdate the running timer (e.g. "2026-09-12T15:00:00" interpreted in local time, or "2026-09-12T15:00:00-07:00"). Defaults to now. The timer runs open-ended from this time until stopped.',
         },
       },
+    },
+  },
+  {
+    name: 'toggl_create_time_entry',
+    description:
+      'Create a completed time entry in the past in one call (e.g. "I worked on X from 1pm to 3pm yesterday"). Requires start_time plus either stop_time or a positive duration (seconds). To start a running timer instead, use toggl_start_timer.',
+    annotations: {
+      readOnlyHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        start_time: {
+          type: 'string',
+          description:
+            'ISO 8601 start time (e.g. "2026-09-12T13:00:00" in local time, or "2026-09-12T13:00:00-07:00").',
+        },
+        stop_time: {
+          type: 'string',
+          description:
+            'ISO 8601 stop time. Provide this or duration. Duration is derived from start_time/stop_time when given.',
+        },
+        duration: {
+          type: 'number',
+          description:
+            'Duration in seconds (positive). Alternative to stop_time when you know the length but not the exact end.',
+        },
+        description: {
+          type: 'string',
+          description: 'Description of the time entry',
+        },
+        workspace_id: {
+          type: 'number',
+          description:
+            'Workspace ID. If omitted, uses TOGGL_DEFAULT_WORKSPACE_ID or the only available workspace; required when multiple workspaces exist.',
+        },
+        project_id: {
+          type: 'number',
+          description: 'Project ID (optional)',
+        },
+        task_id: {
+          type: 'number',
+          description: 'Task ID (optional)',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Tags for the entry',
+        },
+        billable: {
+          type: 'boolean',
+          description: 'Mark the entry billable',
+        },
+      },
+      required: ['start_time'],
     },
   },
   {
@@ -808,6 +866,42 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
                 {
                   success: true,
                   message: startTime ? 'Timer started (backdated)' : 'Timer started',
+                  entry: hydrated[0],
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case 'toggl_create_time_entry': {
+        const workspaceId = await resolveWorkspaceForTool(args, 'creating a time entry');
+        const timing = resolveCreatedEntryTiming(args?.start_time, args?.stop_time, args?.duration);
+
+        const created = await api.createTimeEntry(workspaceId, {
+          description: args?.description as string | undefined,
+          project_id: args?.project_id as number | undefined,
+          task_id: args?.task_id as number | undefined,
+          tags: args?.tags as string[] | undefined,
+          billable: args?.billable as boolean | undefined,
+          start: timing.start,
+          stop: timing.stop,
+          duration: timing.duration,
+        });
+
+        await ensureCache();
+        const hydrated = await cache.hydrateTimeEntries([created]);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: 'Time entry created',
                   entry: hydrated[0],
                 },
                 null,

@@ -130,7 +130,7 @@ Build output lands in `dist/` (do not edit directly); `dist/index.js` is the CLI
 
 ## MCP Tools
 
-The server registers **17 tools**, all prefixed `toggl_`, defined in the `tools` array in `src/index.ts` and dispatched by the `CallToolRequestSchema` switch. (`server.json` lists the same 17.) This list reflects v1.1.0 of this repo.
+The server registers **18 tools**, all prefixed `toggl_`, defined in the `tools` array in `src/index.ts` and dispatched by the `CallToolRequestSchema` switch. (`server.json` lists the same 18.) This list reflects v1.1.0 of this repo.
 
 **Health / auth**
 1. **toggl_check_auth** — Verify API connectivity and auth; returns the (email-masked) user and accessible workspaces.
@@ -139,27 +139,28 @@ The server registers **17 tools**, all prefixed `toggl_`, defined in the `tools`
 2. **toggl_get_time_entries** — Get time entries by `period` (`today`/`yesterday`/`week`/`lastWeek`/`month`/`lastMonth`) or `start_date`/`end_date`; optional `workspace_id`/`project_id` filters. Returns entries hydrated with project/workspace names.
 3. **toggl_get_current_entry** — Get the currently running time entry, if any.
 4. **toggl_start_timer** — Start a timer (`description`, `workspace_id`, `project_id`, `task_id`, `tags`, optional `start_time` to backdate the running timer). Workspace resolved per the rule below.
-5. **toggl_update_time_entry** — Update/backdate an existing entry (`time_entry_id`, optional `workspace_id`, and any of `description`, `project_id`, `task_id`, `tags`, `billable`, `start_time`, `stop_time`, `duration`). `workspace_id` is looked up from the entry when omitted; `start_time`/`stop_time` are ISO 8601.
-6. **toggl_stop_timer** — Stop the currently running timer.
+5. **toggl_create_time_entry** — Create a completed past entry in one call: `start_time` plus either `stop_time` or a positive `duration` (seconds); optional `description`, `workspace_id`, `project_id`, `task_id`, `tags`, `billable`. Times are ISO 8601. For a running timer, use `toggl_start_timer` instead.
+6. **toggl_update_time_entry** — Update/backdate an existing entry (`time_entry_id`, optional `workspace_id`, and any of `description`, `project_id`, `task_id`, `tags`, `billable`, `start_time`, `stop_time`, `duration`). `workspace_id` is looked up from the entry when omitted; `start_time`/`stop_time` are ISO 8601.
+7. **toggl_stop_timer** — Stop the currently running timer.
 
 **Reporting**
-7. **toggl_daily_report** — Daily report (`date`, `format` `json`|`text`) with hours by project and workspace.
-8. **toggl_weekly_report** — Weekly report (`week_offset`, `format`) with daily breakdown and project summaries.
-9. **toggl_project_summary** — Total hours per project for a `period` or date range (optional `workspace_id`).
-10. **toggl_workspace_summary** — Total hours per workspace for a `period` or date range.
+8. **toggl_daily_report** — Daily report (`date`, `format` `json`|`text`) with hours by project and workspace.
+9. **toggl_weekly_report** — Weekly report (`week_offset`, `format`) with daily breakdown and project summaries.
+10. **toggl_project_summary** — Total hours per project for a `period` or date range (optional `workspace_id`).
+11. **toggl_workspace_summary** — Total hours per workspace for a `period` or date range.
 
 **Management**
-11. **toggl_list_workspaces** — List all available workspaces.
-12. **toggl_list_projects** — List projects for a workspace.
-13. **toggl_list_clients** — List clients for a workspace.
+12. **toggl_list_workspaces** — List all available workspaces.
+13. **toggl_list_projects** — List projects for a workspace.
+14. **toggl_list_clients** — List clients for a workspace.
 
 **Cache management**
-14. **toggl_warm_cache** — Pre-fetch and cache workspace, project, client, and tag data.
-15. **toggl_cache_stats** — Cache statistics and hit-rate metrics.
-16. **toggl_clear_cache** — Clear all cached data.
+15. **toggl_warm_cache** — Pre-fetch and cache workspace, project, client, and tag data.
+16. **toggl_cache_stats** — Cache statistics and hit-rate metrics.
+17. **toggl_clear_cache** — Clear all cached data.
 
 **Timeline**
-17. **toggl_get_timeline** — Toggl Desktop activity timeline (app usage). `period` or `start_date`/`end_date`, `app` filter, `include_events` (default true), `redact_titles` (default false; nulls window titles), `limit` (default 50, max 1000; affects the events array only, never the summary). **Privacy:** raw events include window titles that may contain sensitive content — use `include_events: false` or `redact_titles: true` for privacy-conscious use. Returns `enabled: false` with guidance if Toggl Desktop timeline sync is not enabled.
+18. **toggl_get_timeline** — Toggl Desktop activity timeline (app usage). `period` or `start_date`/`end_date`, `app` filter, `include_events` (default true), `redact_titles` (default false; nulls window titles), `limit` (default 50, max 1000; affects the events array only, never the summary). **Privacy:** raw events include window titles that may contain sensitive content — use `include_events: false` or `redact_titles: true` for privacy-conscious use. Returns `enabled: false` with guidance if Toggl Desktop timeline sync is not enabled.
 
 ## Environment Variables
 
@@ -188,7 +189,7 @@ Loaded from the environment or a local `.env` file via `dotenv` (`config({ quiet
 
 **Workspace resolution** (`src/workspace.ts`): tools needing a workspace resolve it as explicit `workspace_id` arg → `TOGGL_DEFAULT_WORKSPACE_ID` → the sole workspace if exactly one exists → otherwise throw `WorkspaceResolutionError` (`code: WORKSPACE_REQUIRED`) listing available workspaces. `parseWorkspaceId` accepts only positive integers; anything else becomes `undefined`.
 
-**Dates are inclusive at the tool boundary** but Toggl's API treats `end_date` as exclusive. `parseInclusiveEndDate` (`src/index.ts:30`) adds one day, and all ranges are computed in **local** time via `parseLocalYMD`/`toLocalYMD` (`src/utils.ts`). Date inputs use `YYYY-MM-DD`. **Datetime inputs** (`start_time`/`stop_time` on `toggl_start_timer`/`toggl_update_time_entry`) are ISO 8601 and parsed by `parseIsoDateTime` (`src/utils.ts`); a value without a timezone offset is interpreted in **local** time, one with `Z`/offset is honored as given, and both normalize to a UTC ISO string for the Toggl API.
+**Dates are inclusive at the tool boundary** but Toggl's API treats `end_date` as exclusive. `parseInclusiveEndDate` (`src/index.ts:30`) adds one day, and all ranges are computed in **local** time via `parseLocalYMD`/`toLocalYMD` (`src/utils.ts`). Date inputs use `YYYY-MM-DD`. **Datetime inputs** (`start_time`/`stop_time` on `toggl_start_timer`/`toggl_create_time_entry`/`toggl_update_time_entry`) are ISO 8601 and parsed by `parseIsoDateTime` (`src/utils.ts`); a value without a timezone offset is interpreted in **local** time, one with `Z`/offset is honored as given, and both normalize to a UTC ISO string for the Toggl API.
 
 **Caching** (`src/cache-manager.ts`): in-memory TTL maps for workspaces/projects/clients/tasks/tags; `hydrateTimeEntries` attaches project/workspace names. On first tool use `ensureCache` (`src/index.ts:159`) pre-warms project/client/tag data **only when it can resolve a workspace** — `TOGGL_DEFAULT_WORKSPACE_ID`, or exactly one accessible workspace. With multiple workspaces and no default set, it marks the cache warmed without pre-fetching, so those entities are fetched lazily on the first tool that resolves a workspace.
 

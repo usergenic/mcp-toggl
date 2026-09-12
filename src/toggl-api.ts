@@ -315,14 +315,17 @@ export class TogglAPI {
     description?: string,
     projectId?: number,
     taskId?: number,
-    tags?: string[]
+    tags?: string[],
+    start?: string
   ): Promise<TimeEntry> {
     const entry: Partial<CreateTimeEntryRequest> = {
       description,
       project_id: projectId,
       task_id: taskId,
       tags,
-      start: new Date().toISOString(),
+      // A past `start` backdates the running timer; duration stays negative so
+      // Toggl keeps it open-ended and computes elapsed time from `start`.
+      start: start ?? new Date().toISOString(),
       duration: -1, // Negative duration indicates running timer
     };
 

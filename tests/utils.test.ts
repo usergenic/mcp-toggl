@@ -7,6 +7,7 @@ import {
   getDateRange,
   isDatePeriod,
   localDateRangeFromArgs,
+  parseIsoDateTime,
   parseLocalYMD,
   secondsToHours,
   toLocalYMD,
@@ -26,6 +27,26 @@ describe('time formatting utilities', () => {
     expect(formatDuration(3661)).toBe('1h 1m');
     expect(formatDuration(61)).toBe('1m 1s');
     expect(formatDuration(42)).toBe('42s');
+  });
+});
+
+describe('parseIsoDateTime', () => {
+  it('honors an explicit timezone offset or Z', () => {
+    expect(parseIsoDateTime('2026-09-12T15:00:00Z')).toBe('2026-09-12T15:00:00.000Z');
+    expect(parseIsoDateTime('2026-09-12T15:00:00-07:00')).toBe('2026-09-12T22:00:00.000Z');
+  });
+
+  it('interprets a zoneless datetime in the host local timezone', () => {
+    // Suite TZ is Europe/London, which is BST (+01:00) in September.
+    expect(parseIsoDateTime('2026-09-12T15:00:00')).toBe('2026-09-12T14:00:00.000Z');
+    expect(parseIsoDateTime('2026-09-12T15:00')).toBe('2026-09-12T14:00:00.000Z');
+  });
+
+  it('rejects malformed, impossible, or out-of-range datetimes', () => {
+    expect(() => parseIsoDateTime('3pm')).toThrow(/Invalid datetime format/);
+    expect(() => parseIsoDateTime('2026-09-12')).toThrow(/Invalid datetime format/);
+    expect(() => parseIsoDateTime('2026-02-30T10:00:00')).toThrow(/Invalid calendar date/);
+    expect(() => parseIsoDateTime('2026-09-12T25:00:00')).toThrow(/Invalid datetime/);
   });
 });
 

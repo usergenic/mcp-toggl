@@ -66,6 +66,68 @@ describe('toggl api errors', () => {
   });
 });
 
+describe('time entry writes', () => {
+  afterEach(() => {
+    fetchMock.mockReset();
+  });
+
+  it('starts a running timer at the current time by default', async () => {
+    fetchMock.mockResolvedValueOnce(response({ status: 200, json: { id: 1 } }));
+
+    const api = new TogglAPI('token');
+    await api.startTimer(123, 'PR review');
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; body: string }];
+    expect(url).toContain('/workspaces/123/time_entries');
+    expect(init.method).toBe('POST');
+    const body = JSON.parse(init.body) as Record<string, unknown>;
+    expect(body).toMatchObject({
+      workspace_id: 123,
+      description: 'PR review',
+      duration: -1,
+      created_with: 'mcp-toggl',
+    });
+    expect(typeof body.start).toBe('string');
+  });
+
+  it('backdates a running timer to the provided start', async () => {
+    fetchMock.mockResolvedValueOnce(response({ status: 200, json: { id: 2 } }));
+
+    const api = new TogglAPI('token');
+    await api.startTimer(
+      123,
+      'PR review',
+      undefined,
+      undefined,
+      undefined,
+      '2026-09-12T15:00:00Z'
+    );
+
+    const [, init] = fetchMock.mock.calls[0] as [string, { body: string }];
+    expect(JSON.parse(init.body)).toMatchObject({
+      start: '2026-09-12T15:00:00Z',
+      duration: -1,
+    });
+  });
+
+  it('sends partial updates to the time entry endpoint', async () => {
+    fetchMock.mockResolvedValueOnce(response({ status: 200, json: { id: 9 } }));
+
+    const api = new TogglAPI('token');
+    await api.updateTimeEntry(123, 9, { start: '2026-09-12T15:00:00Z', description: 'backdated' });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; body: string }];
+    expect(url).toContain('/workspaces/123/time_entries/9');
+    expect(init.method).toBe('PUT');
+    expect(JSON.parse(init.body)).toEqual({
+      start: '2026-09-12T15:00:00Z',
+      description: 'backdated',
+    });
+  });
+});
+
 describe('list endpoint pagination', () => {
   afterEach(() => {
     fetchMock.mockReset();

@@ -68,6 +68,50 @@ export function parseLocalYMD(value: string): Date {
   return date;
 }
 
+// Parse an ISO 8601 datetime into a normalized UTC ISO string suitable for the
+// Toggl API's `start`/`stop` fields. A datetime without a timezone offset is
+// interpreted in the host's local timezone, matching the local YYYY-MM-DD date
+// inputs used elsewhere; a datetime with `Z` or an offset is honored as given.
+export function parseIsoDateTime(value: string): string {
+  const trimmed = value.trim();
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/.exec(
+      trimmed
+    );
+  if (!match) {
+    throw new Error(
+      `Invalid datetime format: ${value}. Expected ISO 8601, e.g. 2026-09-12T15:00:00 or 2026-09-12T15:00:00-07:00.`
+    );
+  }
+
+  const [, yearStr, monthStr, dayStr, hourStr, minuteStr, secondStr] = match;
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid calendar date: ${value}`);
+  }
+
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  const second = secondStr === undefined ? 0 : Number(secondStr);
+  if (hour > 23 || minute > 59 || second > 59) {
+    throw new Error(`Invalid datetime: ${value}`);
+  }
+
+  const date = new Date(trimmed.replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid datetime: ${value}`);
+  }
+
+  return date.toISOString();
+}
+
 export function isDatePeriod(value: unknown): value is DatePeriod {
   return (
     value === 'today' ||

@@ -23,9 +23,15 @@ import {
   generateWorkspaceSummary,
   toLocalYMD,
   parseLocalYMD,
+  parseIsoDateTime,
   localDateRangeFromArgs,
 } from './utils.js';
-import type { CacheConfig, TimelineEvent, TimeEntry } from './types.js';
+import type {
+  CacheConfig,
+  TimelineEvent,
+  TimeEntry,
+  UpdateTimeEntryRequest,
+} from './types.js';
 
 function parseInclusiveEndDate(value: string): Date {
   const date = parseLocalYMD(value);
@@ -267,7 +273,8 @@ const tools: Tool[] = [
   },
   {
     name: 'toggl_start_timer',
-    description: 'Start a new time entry timer',
+    description:
+      'Start a new time entry timer. Pass start_time to backdate the running timer (e.g. "I started at 3pm").',
     annotations: {
       readOnlyHint: false,
       idempotentHint: false,
@@ -298,7 +305,73 @@ const tools: Tool[] = [
           items: { type: 'string' },
           description: 'Tags for the entry',
         },
+        start_time: {
+          type: 'string',
+          description:
+            'Optional ISO 8601 start time to backdate the running timer (e.g. "2026-09-12T15:00:00" interpreted in local time, or "2026-09-12T15:00:00-07:00"). Defaults to now. The timer runs open-ended from this time until stopped.',
+        },
       },
+    },
+  },
+  {
+    name: 'toggl_update_time_entry',
+    description:
+      'Update an existing time entry: fix or backdate its start/stop, or change description, project, task, tags, or billable flag. Use this to correct or backdate an entry that already exists (running or completed).',
+    annotations: {
+      readOnlyHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        time_entry_id: {
+          type: 'number',
+          description: 'ID of the time entry to update',
+        },
+        workspace_id: {
+          type: 'number',
+          description:
+            'Workspace ID of the entry. If omitted, it is looked up from the entry itself.',
+        },
+        description: {
+          type: 'string',
+          description: 'New description for the entry',
+        },
+        project_id: {
+          type: 'number',
+          description: 'Move the entry to this project',
+        },
+        task_id: {
+          type: 'number',
+          description: 'Move the entry to this task',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Replace the entry tags with this list',
+        },
+        billable: {
+          type: 'boolean',
+          description: 'Mark the entry billable or not',
+        },
+        start_time: {
+          type: 'string',
+          description:
+            'New ISO 8601 start time (e.g. "2026-09-12T15:00:00" in local time, or "2026-09-12T15:00:00-07:00"). Backdates the entry.',
+        },
+        stop_time: {
+          type: 'string',
+          description:
+            'New ISO 8601 stop time. Setting a stop on a running entry ends it at that time.',
+        },
+        duration: {
+          type: 'number',
+          description:
+            'Duration in seconds for a completed entry. Negative keeps the entry running. Prefer start_time/stop_time unless you specifically need to set a raw duration.',
+        },
+      },
+      required: ['time_entry_id'],
     },
   },
   {
@@ -711,12 +784,17 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
       case 'toggl_start_timer': {
         const workspaceId = await resolveWorkspaceForTool(args, 'starting a timer');
 
+        const startTime = args?.start_time
+          ? parseIsoDateTime(args.start_time as string)
+          : undefined;
+
         const entry = await api.startTimer(
           workspaceId,
           args?.description as string | undefined,
           args?.project_id as number | undefined,
           args?.task_id as number | undefined,
-          args?.tags as string[] | undefined
+          args?.tags as string[] | undefined,
+          startTime
         );
 
         await ensureCache();
@@ -729,7 +807,66 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
               text: JSON.stringify(
                 {
                   success: true,
-                  message: 'Timer started',
+                  message: startTime ? 'Timer started (backdated)' : 'Timer started',
+                  entry: hydrated[0],
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+
+      case 'toggl_update_time_entry': {
+        const timeEntryId = args?.time_entry_id;
+        if (
+          typeof timeEntryId !== 'number' ||
+          !Number.isInteger(timeEntryId) ||
+          timeEntryId <= 0
+        ) {
+          throw new Error('time_entry_id is required and must be a positive integer');
+        }
+
+        const updates: UpdateTimeEntryRequest = {};
+        if (args?.description !== undefined) updates.description = args.description as string;
+        if (args?.project_id !== undefined) updates.project_id = args.project_id as number;
+        if (args?.task_id !== undefined) updates.task_id = args.task_id as number;
+        if (args?.tags !== undefined) updates.tags = args.tags as string[];
+        if (args?.billable !== undefined) updates.billable = args.billable as boolean;
+        if (args?.duration !== undefined) updates.duration = args.duration as number;
+        if (args?.start_time !== undefined) {
+          updates.start = parseIsoDateTime(args.start_time as string);
+        }
+        if (args?.stop_time !== undefined) {
+          updates.stop = parseIsoDateTime(args.stop_time as string);
+        }
+
+        if (Object.keys(updates).length === 0) {
+          throw new Error(
+            'No fields to update. Provide at least one of: description, project_id, task_id, tags, billable, start_time, stop_time, duration.'
+          );
+        }
+
+        // The entry itself is authoritative about its workspace, so look it up
+        // when the caller doesn't pass workspace_id explicitly.
+        const explicitWorkspaceId = parseWorkspaceId(args?.workspace_id);
+        const workspaceId =
+          explicitWorkspaceId ?? (await api.getTimeEntry(timeEntryId)).workspace_id;
+
+        const updated = await api.updateTimeEntry(workspaceId, timeEntryId, updates);
+
+        await ensureCache();
+        const hydrated = await cache.hydrateTimeEntries([updated]);
+
+        return {
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify(
+                {
+                  success: true,
+                  message: 'Time entry updated',
                   entry: hydrated[0],
                 },
                 null,

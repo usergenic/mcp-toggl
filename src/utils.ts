@@ -68,6 +68,95 @@ export function parseLocalYMD(value: string): Date {
   return date;
 }
 
+// Parse an ISO 8601 datetime into a normalized UTC ISO string suitable for the
+// Toggl API's `start`/`stop` fields. A datetime without a timezone offset is
+// interpreted in the host's local timezone, matching the local YYYY-MM-DD date
+// inputs used elsewhere; a datetime with `Z` or an offset is honored as given.
+export function parseIsoDateTime(value: string): string {
+  const trimmed = value.trim();
+  const match =
+    /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$/.exec(
+      trimmed
+    );
+  if (!match) {
+    throw new Error(
+      `Invalid datetime format: ${value}. Expected ISO 8601, e.g. 2026-09-12T15:00:00 or 2026-09-12T15:00:00-07:00.`
+    );
+  }
+
+  const [, yearStr, monthStr, dayStr, hourStr, minuteStr, secondStr] = match;
+  const year = Number(yearStr);
+  const month = Number(monthStr);
+  const day = Number(dayStr);
+  const probe = new Date(Date.UTC(year, month - 1, day));
+  if (
+    probe.getUTCFullYear() !== year ||
+    probe.getUTCMonth() !== month - 1 ||
+    probe.getUTCDate() !== day
+  ) {
+    throw new Error(`Invalid calendar date: ${value}`);
+  }
+
+  const hour = Number(hourStr);
+  const minute = Number(minuteStr);
+  const second = secondStr === undefined ? 0 : Number(secondStr);
+  if (hour > 23 || minute > 59 || second > 59) {
+    throw new Error(`Invalid datetime: ${value}`);
+  }
+
+  const date = new Date(trimmed.replace(' ', 'T'));
+  if (Number.isNaN(date.getTime())) {
+    throw new Error(`Invalid datetime: ${value}`);
+  }
+
+  return date.toISOString();
+}
+
+export interface CreatedEntryTiming {
+  start: string;
+  stop?: string;
+  duration: number;
+}
+
+// Resolve the start/stop/duration for a completed past time entry from raw tool
+// args. A completed entry needs an end, so start_time must be accompanied by
+// either stop_time or a positive duration (seconds); when stop_time is given,
+// duration is derived from it. Toggl requires `duration` on created entries, so
+// it is always returned.
+export function resolveCreatedEntryTiming(
+  startTime: unknown,
+  stopTime: unknown,
+  duration: unknown
+): CreatedEntryTiming {
+  if (typeof startTime !== 'string') {
+    throw new Error('start_time is required (ISO 8601).');
+  }
+  const start = parseIsoDateTime(startTime);
+
+  if (stopTime !== undefined) {
+    if (typeof stopTime !== 'string') {
+      throw new Error('stop_time must be an ISO 8601 string.');
+    }
+    const stop = parseIsoDateTime(stopTime);
+    const seconds = Math.round((new Date(stop).getTime() - new Date(start).getTime()) / 1000);
+    if (seconds <= 0) {
+      throw new Error('stop_time must be after start_time.');
+    }
+    return { start, stop, duration: seconds };
+  }
+
+  if (duration !== undefined) {
+    if (typeof duration !== 'number' || !Number.isFinite(duration) || duration <= 0) {
+      throw new Error('duration must be a positive number of seconds.');
+    }
+    return { start, duration: Math.round(duration) };
+  }
+
+  throw new Error(
+    'A completed entry needs an end: provide stop_time or a positive duration (seconds). To start a running timer, use toggl_start_timer.'
+  );
+}
+
 export function isDatePeriod(value: unknown): value is DatePeriod {
   return (
     value === 'today' ||

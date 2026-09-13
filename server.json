@@ -37,6 +37,14 @@
       "description": "Start a new time entry timer"
     },
     {
+      "name": "toggl_create_time_entry",
+      "description": "Create a completed time entry in the past (start plus stop or duration)"
+    },
+    {
+      "name": "toggl_update_time_entry",
+      "description": "Update or backdate an existing time entry (start/stop, description, project, tags, billable)"
+    },
+    {
       "name": "toggl_stop_timer",
       "description": "Stop the currently running timer"
     },
